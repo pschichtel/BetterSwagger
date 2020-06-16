@@ -1,11 +1,10 @@
 package eu.lindenbaum.better.swagger
 
 import io.swagger.v3.oas.models.headers.Header
-import io.swagger.v3.oas.models.parameters.Parameter
+import io.swagger.v3.oas.models.parameters.{Parameter, RequestBody}
 import io.swagger.v3.oas.models.responses.ApiResponse
-import io.swagger.v3.oas.models.{Operation, PathItem, Paths}
+import io.swagger.v3.oas.models.{OpenAPI, Operation, PathItem, Paths}
 import io.swagger.v3.parser.OpenAPIV3Parser
-
 import java.util.{Map => JMap}
 
 import scala.jdk.CollectionConverters._
@@ -44,6 +43,7 @@ object Main {
 
   def parseOperation(method: String, path: String, op: Operation): Result[Endpoint] = {
     val desc = Option(op.getDescription)
+    val summary = Option(op.getSummary)
     val id = op.getOperationId
     if (id == null) {
       Result.error("No operationId given!")
@@ -54,7 +54,7 @@ object Main {
       for {
         params <- parseParameters(op)
         responses <- parseResponses(op)
-      } yield Endpoint(id, method, path, desc, tags, params, responses)
+      } yield Endpoint(id, method, path, summary, desc, tags, params, responses)
     }
   }
 
@@ -122,6 +122,20 @@ object Main {
     }
   }
 
+  def parseRequestBodies(openAPI: OpenAPI): Result[Map[String, EndpointBody]] = {
+    val bodies = Option(openAPI.getComponents)
+      .flatMap(c => Option(c.getRequestBodies))
+      .map(_.asScala.toSeq)
+      .getOrElse(Seq.empty)
+      .map { case (name, body) => parseRequestBody(body).map(r => (name, r)) }
+
+    Result.sequence(bodies).map(_.toMap)
+  }
+
+  def parseRequestBody(body: RequestBody): Result[EndpointBody] = {
+    ???
+  }
+
   def main(args: Array[String]): Unit = {
     val openAPI = new OpenAPIV3Parser().read("https://stage.cognitivevoice.io/v1/docs/specs/core.yaml")
 
@@ -132,6 +146,9 @@ object Main {
 
     val headers = parseHeaders(openAPI.getComponents.getHeaders)
     println(s"headers: $headers")
+
+    val requestBodies = openAPI.getComponents.getRequestBodies
+    println(requestBodies)
 
 
     openAPI.getComponents.getSchemas.asScala.foreach { case (order, schema) =>

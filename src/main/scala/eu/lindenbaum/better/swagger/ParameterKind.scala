@@ -10,7 +10,7 @@ object ParameterKind {
       case "header" => Result.ok(Header(name))
       case "path" => Result.ok(Path(name))
       case "cookie" => Result.ok(Cookie(name))
-      case in => Result.error(s"Unknown parameter location $in")
+      case in => Result.error(s"Unknown parameter kind $in")
     }
   }
 
@@ -18,5 +18,4 @@ object ParameterKind {
   final case class Query(name: String) extends ParameterKind
   final case class Header(name: String) extends ParameterKind
   final case class Cookie(name: String) extends ParameterKind
-  final case class Body(name: String) extends ParameterKind
 }
