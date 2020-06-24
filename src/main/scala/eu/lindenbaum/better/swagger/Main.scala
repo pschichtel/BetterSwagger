@@ -4,12 +4,9 @@ import io.swagger.v3.oas.models.headers.Header
 import io.swagger.v3.oas.models.parameters.{Parameter, RequestBody}
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.{OpenAPI, Operation, PathItem, Paths}
-import io.swagger.v3.parser.OpenAPIV3Parser
 import java.util.{Map => JMap}
 
 import scala.jdk.CollectionConverters._
-
-
 
 object Main {
 
@@ -136,22 +133,23 @@ object Main {
     ???
   }
 
-  def main(args: Array[String]): Unit = {
-    val openAPI = new OpenAPIV3Parser().read("https://stage.cognitivevoice.io/v1/docs/specs/core.yaml")
 
-    parseEndpoints(openAPI.getPaths) match {
+  def main(args: Array[String]): Unit = {
+    val Right(SpecSource(_, spec)) = SpecSource.load("https://stage.cognitivevoice.io/v1/docs/specs/core.yaml", None)
+
+    parseEndpoints(spec.getPaths) match {
       case Right(endpoints) => endpoints.foreach(println)
       case Left(errors) => println(errors)
     }
 
-    val headers = parseHeaders(openAPI.getComponents.getHeaders)
+    val headers = parseHeaders(spec.getComponents.getHeaders)
     println(s"headers: $headers")
 
-    val requestBodies = openAPI.getComponents.getRequestBodies
+    val requestBodies = spec.getComponents.getRequestBodies
     println(requestBodies)
 
 
-    openAPI.getComponents.getSchemas.asScala.foreach { case (order, schema) =>
+    spec.getComponents.getSchemas.asScala.foreach { case (order, schema) =>
       println(s"$order - ${schema.get$ref()}")
     }
   }
