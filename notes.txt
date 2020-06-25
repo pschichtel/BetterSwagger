@@ -1,0 +1,15 @@
+- one-of schema with single child -> replace by child
+- one-of schema with multiple children without discriminator -> untagged union
+- one-of schema with multiple children with discriminator -> hoist discriminator field out of children, closed ADT
+- one-of schema should support non-string discriminator
+
+- all-of schema with metadata-only children -> merge metadata-only children into preceding sibling
+- all-of schema with single child -> replace by child
+- all-of schema with more than 1 child and exactly one child is $ref -> create product of children except $ref-child and inherit $ref
+- all-of schema without 0 or more than 1 $ref-children -> create product ( TODO possibly allow multi-inheritance )
+- all-of schema with discriminator -> open ADT
+
+- any-of TODO not useful to support?
+- not TODO not useful to support?
+
+- enum with one value -> constant value
