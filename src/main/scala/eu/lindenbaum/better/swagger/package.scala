@@ -23,11 +23,33 @@ package object swagger {
     }
 
     def required[T](v: T, errStr: String): Result[T] =
-      if (v == null) error(errStr)
-      else ok(v)
+      if (v == null) Error(errStr)
+      else Ok(v)
+  }
 
-    def ok[T](v: T): Result[T] = Right(v)
-    def error[T](s: String): Result[T] = Left(Seq(s))
+  object Ok {
+    def apply[T](v: T): Result[T] = Right(v)
+
+    def unapply[T](r: Result[T]): Option[T] = r match {
+      case Right(v) => Some(v)
+      case _ => None
+    }
+  }
+
+  object Error {
+    def apply[T](err: String): Result[T] = apply(Seq(err))
+    def apply[T](err: Seq[String]): Result[T] = Left(err)
+
+    def unapply[T](r: Result[T]): Option[Seq[String]] = r match {
+      case Left(errors) => Some(errors)
+      case _ => None
+    }
+  }
+
+  def splitReference(ref: String): (String, String) = {
+    val jsonPathSeparator = ref.indexOf('#')
+    if (jsonPathSeparator == -1) ("", ref)
+    else (ref.substring(0, jsonPathSeparator), ref.substring(jsonPathSeparator + 1))
   }
 
 }

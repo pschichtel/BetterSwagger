@@ -16,8 +16,8 @@ object SpecSource {
 
     def read(s: String) = {
       Option(new OpenAPIV3Parser().read(s)) match {
-        case Some(oai) => Result.ok(SpecSource(s, oai))
-        case _ => Result.error(s"Failed to read referenced spec: $s")
+        case Some(oai) => Ok(SpecSource(s, oai))
+        case _ => Error(s"Failed to read referenced spec: $s")
       }
     }
 
@@ -30,13 +30,12 @@ object SpecSource {
       }
     }
 
-    val jsonPathSeparator = ref.indexOf('#')
-    val filePart = if (jsonPathSeparator == -1) ref else ref.substring(0, jsonPathSeparator)
+    val (filePart, _) = splitReference(ref)
 
     if (filePart.isEmpty) {
       origin match {
         case Some(ref) => read(ref)
-        case None => Result.error("Cannot read spec for internal reference without an origin")
+        case None => Error("Cannot read spec for internal reference without an origin")
       }
     } else parseRef(filePart) match {
       case Left(url) =>

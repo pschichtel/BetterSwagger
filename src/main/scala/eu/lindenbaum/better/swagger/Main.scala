@@ -43,7 +43,7 @@ object Main {
     val summary = Option(op.getSummary)
     val id = op.getOperationId
     if (id == null) {
-      Result.error("No operationId given!")
+      Error("No operationId given!")
     } else {
 
       val tags = Option(op.getTags).map(_.asScala.toSet).getOrElse(Set.empty)
@@ -113,9 +113,9 @@ object Main {
 
   def parseInt(s: String): Result[Int] = {
     try {
-      Result.ok(Integer.parseInt(s))
+      Ok(Integer.parseInt(s))
     } catch {
-      case e: NumberFormatException => Result.error(e.getLocalizedMessage)
+      case e: NumberFormatException => Error(e.getLocalizedMessage)
     }
   }
 
@@ -135,11 +135,11 @@ object Main {
 
 
   def main(args: Array[String]): Unit = {
-    val Right(SpecSource(_, spec)) = SpecSource.load("https://stage.cognitivevoice.io/v1/docs/specs/core.yaml", None)
+    val Ok(SpecSource(_, spec)) = SpecSource.load("core.yaml", Some("https://stage.cognitivevoice.io/v1/docs/specs/"))
 
     parseEndpoints(spec.getPaths) match {
-      case Right(endpoints) => endpoints.foreach(println)
-      case Left(errors) => println(errors)
+      case Ok(endpoints) => endpoints.foreach(println)
+      case Error(errors) => println(errors)
     }
 
     val headers = parseHeaders(spec.getComponents.getHeaders)
@@ -150,7 +150,8 @@ object Main {
 
 
     spec.getComponents.getSchemas.asScala.foreach { case (order, schema) =>
-      println(s"$order - ${schema.get$ref()}")
+      val obj = ObjectSchema(Root / order)
+      println(s"$order - ${schema.get$ref()} -> $obj")
     }
   }
 }

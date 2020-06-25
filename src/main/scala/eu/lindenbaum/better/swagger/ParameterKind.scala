@@ -6,11 +6,11 @@ sealed trait ParameterKind {
 object ParameterKind {
   def apply(name: String): Result[ParameterKind] = {
     name match {
-      case "query" => Result.ok(Query(name))
-      case "header" => Result.ok(Header(name))
-      case "path" => Result.ok(Path(name))
-      case "cookie" => Result.ok(Cookie(name))
-      case in => Result.error(s"Unknown parameter kind $in")
+      case "query" => Ok(Query(name))
+      case "header" => Ok(Header(name))
+      case "path" => Ok(Path(name))
+      case "cookie" => Ok(Cookie(name))
+      case in => Error(s"Unknown parameter kind $in")
     }
   }
 
