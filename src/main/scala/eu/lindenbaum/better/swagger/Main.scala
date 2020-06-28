@@ -87,20 +87,22 @@ object Main {
   }
 
   def parseResponse(name: String, response: ApiResponse): Result[(Int, EndpointResponse)] = {
-    parseInt(name) map { statusCode =>
+    parseInt(name) flatMap { statusCode =>
       val description = Option(response.getDescription)
       val headers = parseHeaders(response.getHeaders)
 
-      (statusCode, EndpointResponse(statusCode, description, headers))
+      for {
+        h <- headers
+      } yield (statusCode, EndpointResponse(statusCode, description, h))
     }
   }
 
-  def parseHeaders(headers: JMap[String, Header]): Map[String, ResponseHeader] = {
-    Option(headers)
+  def parseHeaders(headers: JMap[String, Header]): Result[Map[String, ResponseHeader]] = {
+    Ok(Option(headers)
       .map(_.asScala.toSeq)
       .getOrElse(Seq.empty)
       .map((parseHeader _).tupled)
-      .toMap
+      .toMap)
   }
 
   def parseHeader(name: String, header: Header): (String, ResponseHeader) = {
@@ -133,25 +135,50 @@ object Main {
     ???
   }
 
+  def processSpecs(basePath: Option[String], specPaths: Seq[String]): Result[Unit] = {
+
+    def applyAll[T](specs: Seq[SpecSource], f: OpenAPI => Result[T]): Result[Seq[T]] =
+      Result.sequence(specs.map(s => f(s.oai)))
+
+    Result.sequence(specPaths.map(SpecSource.load(_: String, basePath))) match {
+      case Ok(specs) =>
+
+        applyAll(specs, s => parseEndpoints(s.getPaths))  match {
+          case Ok(endpoints) => endpoints.foreach(println)
+          case Error(errors) => println(errors)
+        }
+
+        val Ok(headers) = applyAll(specs, s => parseHeaders(s.getComponents.getHeaders)).map(_.flatten.toMap)
+        println(s"headers: $headers")
+
+        val Ok(requestBodies) = applyAll(specs, s => Ok(Option(s.getComponents.getRequestBodies).map(_.asScala).getOrElse(Seq.empty))).map(_.flatten.toMap)
+        println(s"request bodies: $requestBodies")
+
+        val Ok(schemas) = applyAll(specs, s => Ok(Option(s.getComponents.getSchemas).map(_.asScala).getOrElse(Seq.empty))).map(_.flatten)
+        schemas.foreach { case (order, schema) =>
+          val obj = ObjectSchema(Root / order)
+          println(s"$order - ${schema.get$ref()} -> $obj")
+        }
+        Ok(null)
+      case Error(errors) =>
+        Error(errors)
+    }
+  }
 
   def main(args: Array[String]): Unit = {
-    val Ok(SpecSource(_, spec)) = SpecSource.load("core.yaml", Some("https://stage.cognitivevoice.io/v1/docs/specs/"))
 
-    parseEndpoints(spec.getPaths) match {
-      case Ok(endpoints) => endpoints.foreach(println)
-      case Error(errors) => println(errors)
-    }
-
-    val headers = parseHeaders(spec.getComponents.getHeaders)
-    println(s"headers: $headers")
-
-    val requestBodies = spec.getComponents.getRequestBodies
-    println(requestBodies)
-
-
-    spec.getComponents.getSchemas.asScala.foreach { case (order, schema) =>
-      val obj = ObjectSchema(Root / order)
-      println(s"$order - ${schema.get$ref()} -> $obj")
+    args match {
+      case _ if args.length < 2 =>
+        System.err.println("Usage: <base dir> <spec file> [additional spec files...]")
+        System.exit(1)
+      case Array(base, specs @ _*) =>
+        processSpecs(Some(base), specs) match {
+          case Ok(_) =>
+          case Error(errors) =>
+            System.err.println("Errors:")
+            errors.foreach(System.err.println)
+            System.exit(2)
+        }
     }
   }
 }
