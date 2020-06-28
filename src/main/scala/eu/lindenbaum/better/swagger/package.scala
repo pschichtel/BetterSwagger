@@ -48,7 +48,7 @@ package object swagger {
 
   def splitReference(ref: String): (String, String) = {
     val jsonPathSeparator = ref.indexOf('#')
-    if (jsonPathSeparator == -1) ("", ref)
+    if (jsonPathSeparator == -1) (ref, "")
     else (ref.substring(0, jsonPathSeparator), ref.substring(jsonPathSeparator + 1))
   }
 
