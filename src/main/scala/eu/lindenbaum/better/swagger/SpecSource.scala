@@ -2,9 +2,11 @@ package eu.lindenbaum.better.swagger
 
 import java.net.URL
 import java.nio.file.{Path, Paths}
+import java.util.Collections
 
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.parser.OpenAPIV3Parser
+import io.swagger.v3.parser.core.models.ParseOptions
 
 import scala.util.{Success, Try}
 
@@ -12,10 +14,22 @@ case class SpecSource(ref: String, oai: OpenAPI)
 
 object SpecSource {
 
+  val ParserOptions: ParseOptions = {
+    val options = new ParseOptions()
+    options.setCamelCaseFlattenNaming(false)
+    options.setResolve(false)
+    options.setResolveCombinators(false)
+    options.setResolveFully(false)
+    options.setFlatten(false)
+    options.setSkipMatches(false)
+    options.setFlattenComposedSchemas(false)
+    options
+  }
+
   def load(ref: String, origin: Option[String]): Result[SpecSource] = {
 
     def read(s: String) = {
-      Option(new OpenAPIV3Parser().read(s)) match {
+      Option(new OpenAPIV3Parser().read(s, Collections.emptyList(), ParserOptions)) match {
         case Some(oai) => Ok(SpecSource(s, oai))
         case _ => Error(s"Failed to read referenced spec: $s")
       }
