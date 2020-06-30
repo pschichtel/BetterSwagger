@@ -4,13 +4,23 @@ import java.net.URL
 import java.nio.file.{Path, Paths}
 import java.util.Collections
 
-import io.swagger.v3.oas.models.OpenAPI
+import io.swagger.v3.oas.models.headers.Header
+import io.swagger.v3.oas.models.media.Schema
+import io.swagger.v3.oas.models.parameters.RequestBody
+import io.swagger.v3.oas.models.{Components, OpenAPI}
 import io.swagger.v3.parser.OpenAPIV3Parser
 import io.swagger.v3.parser.core.models.ParseOptions
 
+import scala.jdk.CollectionConverters._
 import scala.util.{Success, Try}
 
-case class SpecSource(ref: String, oai: OpenAPI)
+case class SpecSource(ref: String, oai: OpenAPI, scope: SourceFile) {
+  def components: Option[Components] = Option(oai.getComponents)
+
+  def schemas: Map[String, Schema[_]] = components.flatMap(c => Option(c.getSchemas).map(_.asScala.toMap)).getOrElse(Map.empty)
+  def headers: Map[String, Header] = components.flatMap(c => Option(c.getHeaders).map(_.asScala.toMap)).getOrElse(Map.empty)
+  def requestBodies: Map[String, RequestBody] = components.flatMap(c => Option(c.getRequestBodies).map(_.asScala.toMap)).getOrElse(Map.empty)
+}
 
 object SpecSource {
 
@@ -26,23 +36,21 @@ object SpecSource {
     options
   }
 
+  private def read(s: String) = {
+    Option(new OpenAPIV3Parser().read(s, Collections.emptyList(), ParserOptions)) match {
+      case Some(oai) => Ok(SpecSource(s, oai, SourceFile(s, Root)))
+      case _         => Error(s"Failed to read referenced spec: $s")
+    }
+  }
+
+  private def parseRef(ref: String): Either[URL, Path] = {
+    Try(new URL(ref)) match {
+      case Success(url) => Left(url)
+      case _            => Right(Paths.get(ref))
+    }
+  }
+
   def load(ref: String, origin: Option[String]): Result[SpecSource] = {
-
-    def read(s: String) = {
-      Option(new OpenAPIV3Parser().read(s, Collections.emptyList(), ParserOptions)) match {
-        case Some(oai) => Ok(SpecSource(s, oai))
-        case _ => Error(s"Failed to read referenced spec: $s")
-      }
-    }
-
-    def parseRef(ref: String): Either[URL, Path] = {
-      Try(new URL(ref)) match {
-        case Success(url) =>
-          Left(url)
-        case _ =>
-          Right(Paths.get(ref))
-      }
-    }
 
     val (filePart, _) = splitReference(ref)
 

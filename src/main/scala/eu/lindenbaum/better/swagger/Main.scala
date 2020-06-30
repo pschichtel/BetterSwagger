@@ -6,6 +6,8 @@ import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.{OpenAPI, Operation, PathItem, Paths}
 import java.util.{Map => JMap}
 
+import io.swagger.v3.oas.models.media.{ComposedSchema, Schema}
+
 import scala.jdk.CollectionConverters._
 
 object Main {
@@ -97,10 +99,11 @@ object Main {
     }
   }
 
-  def parseHeaders(headers: JMap[String, Header]): Result[Map[String, ResponseHeader]] = {
-    Ok(Option(headers)
-      .map(_.asScala.toSeq)
-      .getOrElse(Seq.empty)
+  def parseHeaders(headers: JMap[String, Header]): Result[Map[String, ResponseHeader]] =
+    parseHeaders(Option(headers).map(_.asScala.toMap).getOrElse(Map.empty))
+
+  def parseHeaders(headers: Map[String, Header]): Result[Map[String, ResponseHeader]] = {
+    Ok(headers.toSeq
       .map((parseHeader _).tupled)
       .toMap)
   }
@@ -135,31 +138,45 @@ object Main {
     ???
   }
 
+  def parseSchemas(spec: SpecSource): Result[Seq[ObjectSchema]] =
+    Result.sequence(spec.schemas.map((parseSchema(spec.scope) _).tupled).toSeq)
+
+  def parseSchema(origin: Origin)(name: String, schema: Schema[_]): Result[ObjectSchema] = {
+    if (schema.getNot != null) Error("Please go a way with your not!")
+    else schema match {
+      case allOf: ComposedSchema if allOf.getAllOf != null =>
+        Ok(ProductSchema(origin / name, Nil))
+      case oneOf: ComposedSchema if oneOf.getOneOf != null =>
+        Ok(SumSchema(origin / name, Nil))
+      case anyOf: ComposedSchema if anyOf.getAnyOf != null =>
+        Ok(SumSchema(origin / name, Nil))
+      case _ =>
+        Ok(SimpleSchema(origin / name))
+    }
+  }
+
   def processSpecs(basePath: Option[String], specPaths: Seq[String]): Result[Unit] = {
 
-    def applyAll[T](specs: Seq[SpecSource], f: OpenAPI => Result[T]): Result[Seq[T]] =
-      Result.sequence(specs.map(s => f(s.oai)))
+    def applyAll[T](specs: Seq[SpecSource], f: SpecSource => Result[T]): Result[Seq[T]] =
+      Result.sequence(specs.map(f))
 
     Result.sequence(specPaths.map(SpecSource.load(_: String, basePath))) match {
       case Ok(specs) =>
 
-        applyAll(specs, s => parseEndpoints(s.getPaths))  match {
+        applyAll(specs, s => parseEndpoints(s.oai.getPaths))  match {
           case Ok(endpoints) => endpoints.foreach(println)
           case Error(errors) => println(errors)
         }
 
-        val Ok(headers) = applyAll(specs, s => parseHeaders(s.getComponents.getHeaders)).map(_.flatten.toMap)
+        val Ok(headers) = applyAll(specs, s => parseHeaders(s.headers)).map(_.flatten.toMap)
         println(s"headers: $headers")
 
-        val Ok(requestBodies) = applyAll(specs, s => Ok(Option(s.getComponents.getRequestBodies).map(_.asScala).getOrElse(Seq.empty))).map(_.flatten.toMap)
+        val Ok(requestBodies) = applyAll(specs, s => Ok(s.requestBodies))
         println(s"request bodies: $requestBodies")
 
-        val Ok(schemas) = applyAll(specs, s => Ok(Option(s.getComponents.getSchemas).map(_.asScala).getOrElse(Seq.empty))).map(_.flatten)
-        schemas.foreach { case (order, schema) =>
-          val obj = ObjectSchema(Root / order)
-          println(s"$order - ${schema.get$ref()} -> $obj")
-        }
-        Ok(null)
+        val Ok(schemas) = applyAll(specs, s => parseSchemas(s)).map(_.flatten)
+        schemas.foreach(println)
+        Ok(())
       case Error(errors) =>
         Error(errors)
     }
