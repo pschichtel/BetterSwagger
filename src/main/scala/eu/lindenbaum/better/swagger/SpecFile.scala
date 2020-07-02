@@ -14,7 +14,7 @@ import io.swagger.v3.parser.core.models.ParseOptions
 import scala.jdk.CollectionConverters._
 import scala.util.{Success, Try}
 
-case class SpecSource(ref: String, oai: OpenAPI, scope: SourceFile) {
+case class SpecFile(oai: OpenAPI, scope: SourceFile) {
   def components: Option[Components] = Option(oai.getComponents)
 
   def schemas: Map[String, Schema[_]] = components.flatMap(c => Option(c.getSchemas).map(_.asScala.toMap)).getOrElse(Map.empty)
@@ -22,7 +22,8 @@ case class SpecSource(ref: String, oai: OpenAPI, scope: SourceFile) {
   def requestBodies: Map[String, RequestBody] = components.flatMap(c => Option(c.getRequestBodies).map(_.asScala.toMap)).getOrElse(Map.empty)
 }
 
-object SpecSource {
+
+object SpecFile {
 
   val ParserOptions: ParseOptions = {
     val options = new ParseOptions()
@@ -36,9 +37,9 @@ object SpecSource {
     options
   }
 
-  private def read(s: String) = {
-    Option(new OpenAPIV3Parser().read(s, Collections.emptyList(), ParserOptions)) match {
-      case Some(oai) => Ok(SpecSource(s, oai, SourceFile(s, Root)))
+  private def read(s: Source) = {
+    Option(new OpenAPIV3Parser().read(s.value, Collections.emptyList(), ParserOptions)) match {
+      case Some(oai) => Ok(SpecFile(oai, SourceFile(s, Root)))
       case _         => Error(s"Failed to read referenced spec: $s")
     }
   }
@@ -50,30 +51,6 @@ object SpecSource {
     }
   }
 
-  def load(ref: String, origin: Option[String]): Result[SpecSource] = {
-
-    val (filePart, _) = splitReference(ref)
-
-    if (filePart.isEmpty) {
-      origin match {
-        case Some(ref) => read(ref)
-        case None => Error("Cannot read spec for internal reference without an origin")
-      }
-    } else parseRef(filePart) match {
-      case Left(url) =>
-        // given ref is a valid URL and as such absolute, so we're done here
-        read(url.toExternalForm)
-      case Right(path) =>
-        read(path.toString).orElse {
-          origin.map(parseRef) match {
-            case Some(Left(baseUrl)) =>
-              read(baseUrl.toURI.resolve(path.toString).toURL.toExternalForm)
-            case Some(Right(basePath)) =>
-              read(basePath.resolve(path).toRealPath().toString)
-            case None =>
-              read(path.toString)
-          }
-        }
-    }
-  }
+  def load(r: String, origin: Option[Source]): Result[SpecFile] =
+    Source(r, origin).flatMap(read)
 }

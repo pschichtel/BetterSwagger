@@ -4,7 +4,7 @@ import io.swagger.v3.oas.models.headers.Header
 import io.swagger.v3.oas.models.parameters.{Parameter, RequestBody}
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.{OpenAPI, Operation, PathItem, Paths}
-import java.util.{Map => JMap}
+import java.util.{Map => JMap, List => JList}
 
 import io.swagger.v3.oas.models.media.{ComposedSchema, Schema}
 
@@ -138,29 +138,53 @@ object Main {
     ???
   }
 
-  def parseSchemas(spec: SpecSource): Result[Seq[ObjectSchema]] =
-    Result.sequence(spec.schemas.map((parseSchema(spec.scope) _).tupled).toSeq)
+  def parseSchemas(spec: SpecFile): Result[Seq[ObjectSchema]] =
+    Result.sequence(spec.schemas.map(s => parseSchema(spec.scope / s._1, s._2)).toSeq)
 
-  def parseSchema(origin: Origin)(name: String, schema: Schema[_]): Result[ObjectSchema] = {
+  def parseSchema(origin: Origin, schema: Schema[_]): Result[ObjectSchema] = {
+
+    def readChildren(schemas: JList[Schema[_]]): Result[Seq[ObjectSchema]] = {
+      val terms = schemas.asScala.toSeq.zipWithIndex.map { case (s, i) =>
+        val productOrigin = origin / s"$i"
+        parseSchema(productOrigin, s)
+      }
+      Result.sequence(terms)
+    }
+
     if (schema.getNot != null) Error("Please go a way with your not!")
     else schema match {
+      case ref if ref.get$ref() != null =>
+        Ref(ref.get$ref(), origin.source.map(_.file)).map(SchemaReference(origin, _: Ref))
       case allOf: ComposedSchema if allOf.getAllOf != null =>
-        Ok(ProductSchema(origin / name, Nil))
+        readChildren(allOf.getAllOf).map(t => ProductSchema(origin, t))
       case oneOf: ComposedSchema if oneOf.getOneOf != null =>
-        Ok(SumSchema(origin / name, Nil))
+        readChildren(oneOf.getOneOf).map(t => SumSchema(origin, t))
       case anyOf: ComposedSchema if anyOf.getAnyOf != null =>
-        Ok(SumSchema(origin / name, Nil))
-      case _ =>
-        Ok(SimpleSchema(origin / name))
+        readChildren(anyOf.getAnyOf).map(t => SumSchema(origin, t))
+      case single if single.getProperties != null =>
+        val props = Result.sequence(single.getProperties.asScala.toSeq.map { case (name, schema) =>
+          parseSchema(origin / name, schema).map(s => (name, s))
+        }).map(_.toMap)
+        props.map(p => SingleSchema(origin, p))
+      case enum if enum.getEnum != null =>
+        val enumType = Option(enum.getType)
+        val enumFormat = Option(enum.getFormat)
+        Option(enum.getEnum).map(_.asScala.toList.map(_.toString)).getOrElse(Nil) match {
+          case Nil => Error("enum without values is not allowed!")
+          case constant :: Nil => Ok(ConstantSchema(origin, enumType, enumFormat, constant))
+          case values => Ok(EnumSchema(origin, enumType, enumFormat, values))
+        }
+      case primitive =>
+        Ok(PrimitiveSchema(origin, primitive.getType, Option(primitive.getFormat)))
     }
   }
 
-  def processSpecs(basePath: Option[String], specPaths: Seq[String]): Result[Unit] = {
+  def processSpecs(basePath: Option[Source], specPaths: Seq[String]): Result[Unit] = {
 
-    def applyAll[T](specs: Seq[SpecSource], f: SpecSource => Result[T]): Result[Seq[T]] =
+    def applyAll[T](specs: Seq[SpecFile], f: SpecFile => Result[T]): Result[Seq[T]] =
       Result.sequence(specs.map(f))
 
-    Result.sequence(specPaths.map(SpecSource.load(_: String, basePath))) match {
+    Result.sequence(specPaths.map(SpecFile.load(_: String, basePath))) match {
       case Ok(specs) =>
 
         applyAll(specs, s => parseEndpoints(s.oai.getPaths))  match {
@@ -189,7 +213,7 @@ object Main {
         System.err.println("Usage: <base dir> <spec file> [additional spec files...]")
         System.exit(1)
       case Array(base, specs @ _*) =>
-        processSpecs(Some(base), specs) match {
+        processSpecs(Source(base).toOption, specs) match {
           case Ok(_) =>
           case Error(errors) =>
             System.err.println("Errors:")
