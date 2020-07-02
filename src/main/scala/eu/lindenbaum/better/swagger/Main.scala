@@ -141,6 +141,10 @@ object Main {
   def parseSchemas(spec: SpecFile): Result[Seq[ObjectSchema]] =
     Result.sequence(spec.schemas.map(s => parseSchema(spec.scope / s._1, s._2)).toSeq)
 
+  def parseSchemaMetadata(name: Option[String], schema: Schema[_]): Result[ObjectMetadata] = {
+    Ok(ObjectMetadata(name.orElse(Option(schema.getName)), Option(schema.getDescription)))
+  }
+
   def parseSchema(origin: Origin, schema: Schema[_]): Result[ObjectSchema] = {
 
     def readChildren(schemas: JList[Schema[_]]): Result[Seq[ObjectSchema]] = {
@@ -152,30 +156,35 @@ object Main {
     }
 
     if (schema.getNot != null) Error("Please go a way with your not!")
-    else schema match {
-      case ref if ref.get$ref() != null =>
-        Ref(ref.get$ref(), origin.source.map(_.file)).map(SchemaReference(origin, _: Ref))
-      case allOf: ComposedSchema if allOf.getAllOf != null =>
-        readChildren(allOf.getAllOf).map(t => ProductSchema(origin, t))
-      case oneOf: ComposedSchema if oneOf.getOneOf != null =>
-        readChildren(oneOf.getOneOf).map(t => SumSchema(origin, t))
-      case anyOf: ComposedSchema if anyOf.getAnyOf != null =>
-        readChildren(anyOf.getAnyOf).map(t => SumSchema(origin, t))
-      case single if single.getProperties != null =>
-        val props = Result.sequence(single.getProperties.asScala.toSeq.map { case (name, schema) =>
-          parseSchema(origin / name, schema).map(s => (name, s))
-        }).map(_.toMap)
-        props.map(p => SingleSchema(origin, p))
-      case enum if enum.getEnum != null =>
-        val enumType = Option(enum.getType)
-        val enumFormat = Option(enum.getFormat)
-        Option(enum.getEnum).map(_.asScala.toList.map(_.toString)).getOrElse(Nil) match {
-          case Nil => Error("enum without values is not allowed!")
-          case constant :: Nil => Ok(ConstantSchema(origin, enumType, enumFormat, constant))
-          case values => Ok(EnumSchema(origin, enumType, enumFormat, values))
+    else {
+      parseSchemaMetadata(None, schema).flatMap { metadata =>
+        schema match {
+          case ref if ref.get$ref() != null =>
+            Ref(ref.get$ref(), origin.source.map(_.file)).map(SchemaReferenceSchema(origin, metadata, _: Ref))
+          case allOf: ComposedSchema if allOf.getAllOf != null =>
+            readChildren(allOf.getAllOf).map(t => ProductSchema(origin, metadata, t))
+          case oneOf: ComposedSchema if oneOf.getOneOf != null =>
+            readChildren(oneOf.getOneOf).map(t => SumSchema(origin, metadata, t))
+          case anyOf: ComposedSchema if anyOf.getAnyOf != null =>
+            readChildren(anyOf.getAnyOf).map(t => SumSchema(origin, metadata, t))
+          case single if single.getProperties != null =>
+            val props = Result.sequence(single.getProperties.asScala.toSeq.map { case (name, schema) =>
+              parseSchema(origin / name, schema).map(s => (name, s))
+            }).map(_.toMap)
+            props.map(p => SingleSchema(origin, metadata, p))
+          case enum if enum.getEnum != null =>
+            val enumType = Option(enum.getType)
+            val enumFormat = Option(enum.getFormat)
+            Option(enum.getEnum).map(_.asScala.toList.map(_.toString)).getOrElse(Nil) match {
+              case Nil => Error("enum without values is not allowed!")
+              case constant :: Nil => Ok(ConstantSchema(origin, metadata, enumType, enumFormat, constant))
+              case values => Ok(EnumSchema(origin, metadata, enumType, enumFormat, values))
+            }
+          case primitive if primitive.getType != null =>
+            Ok(PrimitiveSchema(origin, metadata, primitive.getType, Option(primitive.getFormat)))
+          case metadataOnly => Ok(MetadataOnlySchema(origin, metadata))
         }
-      case primitive =>
-        Ok(PrimitiveSchema(origin, primitive.getType, Option(primitive.getFormat)))
+      }
     }
   }
 
