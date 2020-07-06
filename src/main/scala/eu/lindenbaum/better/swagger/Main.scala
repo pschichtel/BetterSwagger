@@ -90,11 +90,9 @@ object Main {
   }
 
   def parseResponse(origin: Origin, name: String, response: ApiResponse): Result[(Int, Map[String, EndpointResponse])] = {
-    for {
-      statusCode <- parseInt(name)
-      description = Option(response.getDescription)
-      headers <- parseHeaders(origin / "headers", response.getHeaders)
-      contents = Option(response.getContent)
+
+    def parseContents(statusCode: Int, description: Option[String], headers: Map[String, ResponseHeader]) = {
+      Option(response.getContent)
         .map(_.asScala.toSeq)
         .getOrElse(Seq.empty)
         .map { case (mediaType, content) =>
@@ -102,8 +100,15 @@ object Main {
             schema <- parseSchema(origin / name / mediaType, content.getSchema)
           } yield (mediaType, EndpointResponse(statusCode, mediaType, description, headers, schema))
         }
-      c <- Result.sequence(contents)
-    } yield (statusCode, c.toMap)
+    }
+
+    val description = Option(response.getDescription)
+
+    for {
+      statusCode <- parseInt(name)
+      headers <- parseHeaders(origin / "headers", response.getHeaders)
+      contents <- Result.sequence(parseContents(statusCode, description, headers))
+    } yield (statusCode, contents.toMap)
   }
 
   def parseHeaders(origin: Origin, headers: JMap[String, Header]): Result[Map[String, ResponseHeader]] =
