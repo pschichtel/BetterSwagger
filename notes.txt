@@ -13,3 +13,5 @@
 - not TODO not useful to support?
 
 - enum with one value -> constant value
+
+- what the hell are encodings (request body) used for?
