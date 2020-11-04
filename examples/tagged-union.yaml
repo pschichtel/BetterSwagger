@@ -1,0 +1,32 @@
+openapi: 3.0.0
+info:
+  title: Example for a simple tagged union
+  description: Example for a simple tagged union
+  version: 1.0.0
+
+paths: {} # not technically necessary, but it pleases intellij
+
+components:
+  schemas:
+    A:
+      type: object
+      properties:
+        type:
+          type: string
+        values:
+          type: array
+          items:
+            type: string
+    B:
+      type: object
+      properties:
+        type:
+          type: string
+        prop:
+          type: string
+    Union:
+      oneOf:
+        - $ref: '#/components/schemas/A'
+        - $ref: '#/components/schemas/B'
+      discriminator:
+        propertyName: type
